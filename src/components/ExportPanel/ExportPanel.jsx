@@ -91,10 +91,15 @@ export function ExportPanel({ dataCount, filesData, onExportComplete, selectedPl
       const formattedRow = { ...row };
       
       if (selectedPlatform === 'instagram') {
-        // UPPDATERAD Instagram-specifik formatering enligt nya kolumnmappningar
+        // KORRIGERAD Instagram-specifik formatering
+        
+        if (formattedRow.post_id !== undefined) {
+          formattedRow['Publicerings-id'] = formattedRow.post_id;
+          delete formattedRow.post_id;
+        }
         
         if (formattedRow.account_id !== undefined) {
-          formattedRow['Konto-id'] = formattedRow.account_id; // Ändrat från "Konto-ID"
+          formattedRow['Konto-id'] = formattedRow.account_id;
           delete formattedRow.account_id;
         }
         
@@ -104,17 +109,42 @@ export function ExportPanel({ dataCount, filesData, onExportComplete, selectedPl
         }
         
         if (formattedRow.account_username !== undefined) {
-          formattedRow['Kontots användarnamn'] = formattedRow.account_username; // Ändrat från "Användarnamn"
+          formattedRow['Kontots användarnamn'] = formattedRow.account_username;
           delete formattedRow.account_username;
         }
         
         if (formattedRow.description !== undefined) {
-          formattedRow['Beskrivning'] = formattedRow.description; // Ändrat från "Bildtext"
+          formattedRow['Beskrivning'] = formattedRow.description;
           delete formattedRow.description;
         }
         
+        if (formattedRow.duration_sec !== undefined) {
+          formattedRow['Varaktighet (sek)'] = formattedRow.duration_sec;
+          delete formattedRow.duration_sec;
+        }
+        
+        if (formattedRow.publish_time !== undefined) {
+          formattedRow['Publiceringstid'] = formattedRow.publish_time;
+          delete formattedRow.publish_time;
+        }
+        
+        if (formattedRow.permalink !== undefined) {
+          formattedRow['Permalänk'] = formattedRow.permalink;
+          delete formattedRow.permalink;
+        }
+        
+        if (formattedRow.post_type !== undefined) {
+          formattedRow['Inläggstyp'] = formattedRow.post_type;
+          delete formattedRow.post_type;
+        }
+        
+        if (formattedRow.date !== undefined) {
+          formattedRow['Datum'] = formattedRow.date;
+          delete formattedRow.date;
+        }
+        
         if (formattedRow.views !== undefined) {
-          formattedRow['Visningar'] = formattedRow.views; // Ändrat från "Intryck"
+          formattedRow['Visningar'] = formattedRow.views;
           delete formattedRow.views;
         }
         
@@ -139,58 +169,13 @@ export function ExportPanel({ dataCount, filesData, onExportComplete, selectedPl
         }
         
         if (formattedRow.saves !== undefined) {
-          formattedRow['Sparade objekt'] = formattedRow.saves; // Ändrat från "Sparade"
+          formattedRow['Sparade objekt'] = formattedRow.saves;
           delete formattedRow.saves;
         }
         
-        if (formattedRow.profile_visits !== undefined) {
-          formattedRow['Profilbesök'] = formattedRow.profile_visits;
-          delete formattedRow.profile_visits;
-        }
-        
         if (formattedRow.follows !== undefined) {
-          formattedRow['Följer'] = formattedRow.follows; // Ändrat från "Följare"
+          formattedRow['Följer'] = formattedRow.follows;
           delete formattedRow.follows;
-        }
-        
-        if (formattedRow.total_engagement !== undefined) {
-          formattedRow['Interaktioner totalt'] = formattedRow.total_engagement;
-          delete formattedRow.total_engagement;
-        }
-        
-        if (formattedRow.post_id !== undefined) {
-          formattedRow['Publicerings-id'] = formattedRow.post_id; // Ändrat från "Inläggs-ID"
-          delete formattedRow.post_id;
-        }
-        
-        if (formattedRow.publish_time !== undefined) {
-          formattedRow['Publiceringstid'] = formattedRow.publish_time; // Ändrat från "Publicerat"
-          delete formattedRow.publish_time;
-        }
-        
-        if (formattedRow.post_type !== undefined) {
-          formattedRow['Inläggstyp'] = formattedRow.post_type; // Ändrat från "Medietyp"
-          delete formattedRow.post_type;
-        }
-        
-        if (formattedRow.permalink !== undefined) {
-          formattedRow['Permalänk'] = formattedRow.permalink; // Ändrat från "Länk"
-          delete formattedRow.permalink;
-        }
-        
-        if (formattedRow.video_plays !== undefined) {
-          formattedRow['Videospelningar'] = formattedRow.video_plays;
-          delete formattedRow.video_plays;
-        }
-        
-        if (formattedRow.video_30sec_views !== undefined) {
-          formattedRow['30-sekundersvisningar'] = formattedRow.video_30sec_views;
-          delete formattedRow.video_30sec_views;
-        }
-        
-        if (formattedRow.avg_video_play_time !== undefined) {
-          formattedRow['Genomsnittlig visningstid'] = formattedRow.avg_video_play_time;
-          delete formattedRow.avg_video_play_time;
         }
       } else {
         // FACEBOOK-specifik formatering

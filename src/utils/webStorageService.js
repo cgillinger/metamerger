@@ -636,26 +636,62 @@ const getAccountViewData = () => {
 };
 
 /**
- * Hämtar bearbetad post view data
+ * Hämtar bearbetad post view data - UPPDATERAD FÖR ATT KOMBINERA DATA
  */
 const getPostViewData = async () => {
   try {
     // Försök hämta från localStorage först
     const localData = getConfig(STORAGE_KEYS.POST_VIEW_DATA);
-    if (localData) return localData;
     
-    // Annars hämta från IndexedDB
+    // Hämta från IndexedDB, oavsett om lokaldata finns eller ej
     try {
       const dbData = await getFromIndexedDB('csvData');
       if (dbData && Array.isArray(dbData) && dbData.length > 0) {
-        // Returnera den senaste (sortera efter timestamp)
+        console.log(`Hämtade ${dbData.length} poster från IndexedDB`);
+        
+        // Kombinera data från alla poster i IndexedDB
+        let combinedData = [];
+        // Sortera efter timestamp för att hantera data kronologiskt
         const sortedData = dbData.sort((a, b) => b.timestamp - a.timestamp);
-        return sortedData[0].postViewData;
+        
+        // Kombinera all data från IndexedDB
+        for (const dataEntry of sortedData) {
+          if (dataEntry.postViewData && Array.isArray(dataEntry.postViewData)) {
+            combinedData = combinedData.concat(dataEntry.postViewData);
+          }
+        }
+        
+        // Om det också finns data i localStorage, kombinera den också
+        if (localData && Array.isArray(localData)) {
+          // Skapa en Map för att ta bort dubbletter baserat på post_id
+          const uniquePostsMap = new Map();
+          
+          // Lägg först till IndexedDB-data
+          combinedData.forEach(post => {
+            const postId = post.post_id || JSON.stringify(post);
+            uniquePostsMap.set(postId, post);
+          });
+          
+          // Lägg till localStorage-data (överskriver dubletter)
+          localData.forEach(post => {
+            const postId = post.post_id || JSON.stringify(post);
+            uniquePostsMap.set(postId, post);
+          });
+          
+          // Konvertera tillbaka till array
+          combinedData = Array.from(uniquePostsMap.values());
+        }
+        
+        console.log(`Totalt ${combinedData.length} unika poster efter kombination`);
+        return combinedData;
       }
     } catch (dbError) {
       console.warn('Fel vid hämtning från IndexedDB:', dbError);
-      // Fortsätt med tom array
+      // Fortsätt med lokaldata om det finns
     }
+    
+    // Om vi har lokaldata, använd den
+    if (localData) return localData;
     
     return [];
   } catch (error) {
