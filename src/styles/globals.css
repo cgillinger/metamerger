@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 @layer base {
+  /* Default Facebook theme */
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
@@ -34,6 +35,30 @@
 
     --radius: 0.5rem;
   }
+
+  /* Instagram theme */
+  .instagram-theme {
+    --background: 210 20% 98%; /* Ljusgrå bakgrund med minimal blå ton */
+    --foreground: 240 6% 10%; /* Nästan svart text med minimal lila ton */
+    
+    --primary: 330 86% 56%; /* Instagram cerise/magenta */
+    --primary-foreground: 0 0% 100%; /* Vit text på magenta bakgrund */
+
+    --secondary: 272 36% 57%; /* Instagram lila */
+    --secondary-foreground: 0 0% 100%; /* Vit text på lila */
+
+    --accent: 36 94% 57%; /* Instagram gul/orange */
+    --accent-foreground: 0 0% 100%; /* Vit text på orange */
+
+    --muted: 240 10% 94%; /* Ljusare grå med lila ton */
+    --muted-foreground: 240 4% 46%; /* Mörkare grå text */
+
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 330 86% 56%;
+
+    --radius: 0.75rem;
+  }
 }
 
 @layer base {
@@ -44,4 +69,51 @@
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+}
+
+/* Instagram-specifika stilar */
+.instagram-theme {
+  /* Ändra bakgrundsfärg på knappar etc. */
+  .btn-primary, .btn-action {
+    @apply bg-gradient-to-r from-primary to-secondary;
+  }
+
+  /* Ändra färg på aktiva tabbar */
+  .active-tab {
+    @apply bg-primary text-white;
+  }
+  
+  /* Speciella elementfärger */
+  .card-title {
+    @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
+  }
+}
+
+/* 🌟 INSTAGRAM-SPECIFIKA KOMPONENTER */
+.instagram-theme {
+  .instagram-gradient {
+    @apply bg-gradient-to-r from-primary to-secondary;
+  }
+  
+  .instagram-text-gradient {
+    @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
+  }
+}
+
+/* 🏷 PLATFORMSSPECIFIKA KORT */
+.facebook-card {
+  @apply border-blue-100 hover:shadow-blue-100/20;
+}
+
+.instagram-card {
+  @apply border-pink-100 hover:shadow-pink-100/20;
+}
+
+/* Stilar som tillämpas när Instagram-plattformen används */
+.instagram-platform .card-header h3 {
+  @apply text-primary;
+}
+
+.instagram-platform .stat-value {
+  @apply text-primary;
 }

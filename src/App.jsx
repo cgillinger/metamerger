@@ -10,6 +10,7 @@ import { getMemoryUsageStats, clearAllData, getUploadedFilesMetadata, getPostVie
 import { MEMORY_THRESHOLDS } from './utils/memoryUtils';
 import { MemoryIndicator } from './components/MemoryIndicator';
 import { ExportPanel } from './components/ExportPanel';
+import { PlatformSelector } from './components/PlatformSelector';
 
 function App() {
   const [showFileUploader, setShowFileUploader] = useState(false);
@@ -19,6 +20,7 @@ function App() {
   const [activeTab, setActiveTab] = useState("files");
   const [filesData, setFilesData] = useState([]);
   const [dataCount, setDataCount] = useState(0);
+  const [selectedPlatform, setSelectedPlatform] = useState(null); // 'facebook' eller 'instagram'
   
   // Rensa all befintlig data vid appstart om clearOnStart är true
   useEffect(() => {
@@ -30,6 +32,12 @@ function App() {
         
         // Markera appen som initialiserad
         setIsInitialized(true);
+        
+        // Försök att hämta tidigare vald plattform från localStorage
+        const savedPlatform = localStorage.getItem('meta_merger_platform');
+        if (savedPlatform) {
+          setSelectedPlatform(savedPlatform);
+        }
       } catch (error) {
         console.error('Fel vid initialisering av app:', error);
         // Markera appen som initialiserad trots fel
@@ -93,6 +101,20 @@ function App() {
     setActiveTab("export");
   };
   
+  const handlePlatformSelect = (platform) => {
+    setSelectedPlatform(platform);
+    // Spara valet i localStorage för att behålla det över siduppdateringar
+    localStorage.setItem('meta_merger_platform', platform);
+    
+    // Återställ till filer-tabben när man byter plattform
+    setActiveTab("files");
+  };
+  
+  // Använd Instagram-stil eller Facebook-stil baserat på vald plattform
+  const getThemeClass = () => {
+    return selectedPlatform === 'instagram' ? 'instagram-theme' : 'facebook-theme';
+  };
+  
   // Visa laddningsskärm tills appen är initialiserad
   if (!isInitialized) {
     return (
@@ -103,14 +125,25 @@ function App() {
       </div>
     );
   }
+  
+  // Om ingen plattform är vald, visa plattformsväljaren
+  if (!selectedPlatform) {
+    return <PlatformSelector onSelect={handlePlatformSelect} />;
+  }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className={`min-h-screen bg-background flex flex-col ${getThemeClass()}`}>
       <header className="border-b border-border bg-white shadow-sm">
         <div className="container mx-auto py-4 px-4">
           <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-primary">
-              Meta Merger
+            <h1 className={`text-2xl font-bold ${selectedPlatform === 'instagram' ? 'text-primary' : 'text-primary'}`}>
+              {selectedPlatform === 'instagram' ? 'Instagram Merger' : 'Meta Merger'}
+              <button 
+                onClick={() => setSelectedPlatform(null)} 
+                className="ml-4 text-sm font-normal text-muted-foreground hover:text-foreground"
+              >
+                Byt plattform
+              </button>
             </h1>
             <div className="flex space-x-2">
               <Button 
@@ -161,6 +194,7 @@ function App() {
                 onDataProcessed={handleDataProcessed} 
                 onCancel={() => setShowFileUploader(false)}
                 existingData={dataCount > 0}
+                selectedPlatform={selectedPlatform}
               />
             </div>
           ) : (
@@ -177,6 +211,7 @@ function App() {
                     onRefresh={handleFileChange}
                     onClearAll={handleClearAll}
                     canClearData={true}
+                    selectedPlatform={selectedPlatform}
                   />
                 </div>
               </TabsContent>
@@ -197,6 +232,7 @@ function App() {
                   dataCount={dataCount} 
                   filesData={filesData}
                   onExportComplete={() => setIsExporting(false)}
+                  selectedPlatform={selectedPlatform}
                 />
               </TabsContent>
             </Tabs>
@@ -206,7 +242,9 @@ function App() {
 
       <footer className="border-t border-border mt-auto">
         <div className="container mx-auto py-4 px-4 text-center text-sm text-muted-foreground">
-          Meta Merger © {new Date().getFullYear()} - Verktyg för sammanslagning av CSV-filer från Meta Business Suite
+          {selectedPlatform === 'instagram' ? 
+            'Instagram Merger' : 
+            'Meta Merger'} © {new Date().getFullYear()} - Verktyg för sammanslagning av CSV-filer från {selectedPlatform === 'instagram' ? 'Instagram' : 'Meta Business Suite'}
         </div>
       </footer>
     </div>

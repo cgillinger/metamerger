@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Alert, AlertDescription } from '../ui/alert';
-import { AlertCircle, CheckCircle2, FileDown, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, FileDown, FileSpreadsheet, Loader2, Instagram, Facebook } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Label } from '../ui/label';
@@ -9,7 +9,7 @@ import { getPostViewData } from '../../utils/webStorageService';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
-export function ExportPanel({ dataCount, filesData, onExportComplete }) {
+export function ExportPanel({ dataCount, filesData, onExportComplete, selectedPlatform = 'facebook' }) {
   const [isExporting, setIsExporting] = useState(false);
   const [exportFormat, setExportFormat] = useState('csv');
   const [exportResult, setExportResult] = useState(null);
@@ -53,14 +53,13 @@ export function ExportPanel({ dataCount, filesData, onExportComplete }) {
     };
   };
   
-  // Skapa filnamn baserat på datumperiod
+  // Skapa filnamn baserat på datumperiod och plattform
   const createFileName = () => {
     const dateRange = getDateRangeFromFiles();
     let dateString = '';
     
     if (dateRange.startDate && dateRange.endDate) {
       // Formatera datum enligt önskemål (YYYY-MM-DD_YYYY-MM-DD)
-      // Alternativt konvertera till önskat format
       dateString = `${dateRange.startDate}_${dateRange.endDate}`;
       
       // Ta bort eventuella otillåtna tecken i filnamn
@@ -71,7 +70,8 @@ export function ExportPanel({ dataCount, filesData, onExportComplete }) {
       dateString = today.toISOString().split('T')[0];
     }
     
-    return `FB Merged ${dateString}`;
+    const platformPrefix = selectedPlatform === 'instagram' ? 'Instagram' : 'FB';
+    return `${platformPrefix} Merged ${dateString}`;
   };
   
   const formatForExport = (data) => {
@@ -80,97 +80,210 @@ export function ExportPanel({ dataCount, filesData, onExportComplete }) {
       return data;
     }
     
-    // Konvertera tillbaka data till Facebook/Meta-format för kompatibilitet
-    return data.map(row => {
+    // Filtrera baserat på vald plattform
+    const platformData = data.filter(row => 
+      (row.platform === selectedPlatform) || // Om vi har platform-flagga
+      (!row.platform) // Eller om flaggan saknas (bakåtkompatibilitet)
+    );
+    
+    // Konvertera tillbaka data till plattformsspecifikt format
+    return platformData.map(row => {
       const formattedRow = { ...row };
       
-      // Mappa tillbaka interna fält till Facebook-specifika kolumnnamn
-      if (formattedRow.account_id !== undefined) {
-        formattedRow['Sid-id'] = formattedRow.account_id;
-        delete formattedRow.account_id;
+      if (selectedPlatform === 'instagram') {
+        // UPPDATERAD Instagram-specifik formatering enligt nya kolumnmappningar
+        
+        if (formattedRow.account_id !== undefined) {
+          formattedRow['Konto-id'] = formattedRow.account_id; // Ändrat från "Konto-ID"
+          delete formattedRow.account_id;
+        }
+        
+        if (formattedRow.account_name !== undefined) {
+          formattedRow['Kontonamn'] = formattedRow.account_name;
+          delete formattedRow.account_name;
+        }
+        
+        if (formattedRow.account_username !== undefined) {
+          formattedRow['Kontots användarnamn'] = formattedRow.account_username; // Ändrat från "Användarnamn"
+          delete formattedRow.account_username;
+        }
+        
+        if (formattedRow.description !== undefined) {
+          formattedRow['Beskrivning'] = formattedRow.description; // Ändrat från "Bildtext"
+          delete formattedRow.description;
+        }
+        
+        if (formattedRow.views !== undefined) {
+          formattedRow['Visningar'] = formattedRow.views; // Ändrat från "Intryck"
+          delete formattedRow.views;
+        }
+        
+        if (formattedRow.reach !== undefined) {
+          formattedRow['Räckvidd'] = formattedRow.reach;
+          delete formattedRow.reach;
+        }
+        
+        if (formattedRow.likes !== undefined) {
+          formattedRow['Gilla-markeringar'] = formattedRow.likes;
+          delete formattedRow.likes;
+        }
+        
+        if (formattedRow.comments !== undefined) {
+          formattedRow['Kommentarer'] = formattedRow.comments;
+          delete formattedRow.comments;
+        }
+        
+        if (formattedRow.shares !== undefined) {
+          formattedRow['Delningar'] = formattedRow.shares;
+          delete formattedRow.shares;
+        }
+        
+        if (formattedRow.saves !== undefined) {
+          formattedRow['Sparade objekt'] = formattedRow.saves; // Ändrat från "Sparade"
+          delete formattedRow.saves;
+        }
+        
+        if (formattedRow.profile_visits !== undefined) {
+          formattedRow['Profilbesök'] = formattedRow.profile_visits;
+          delete formattedRow.profile_visits;
+        }
+        
+        if (formattedRow.follows !== undefined) {
+          formattedRow['Följer'] = formattedRow.follows; // Ändrat från "Följare"
+          delete formattedRow.follows;
+        }
+        
+        if (formattedRow.total_engagement !== undefined) {
+          formattedRow['Interaktioner totalt'] = formattedRow.total_engagement;
+          delete formattedRow.total_engagement;
+        }
+        
+        if (formattedRow.post_id !== undefined) {
+          formattedRow['Publicerings-id'] = formattedRow.post_id; // Ändrat från "Inläggs-ID"
+          delete formattedRow.post_id;
+        }
+        
+        if (formattedRow.publish_time !== undefined) {
+          formattedRow['Publiceringstid'] = formattedRow.publish_time; // Ändrat från "Publicerat"
+          delete formattedRow.publish_time;
+        }
+        
+        if (formattedRow.post_type !== undefined) {
+          formattedRow['Inläggstyp'] = formattedRow.post_type; // Ändrat från "Medietyp"
+          delete formattedRow.post_type;
+        }
+        
+        if (formattedRow.permalink !== undefined) {
+          formattedRow['Permalänk'] = formattedRow.permalink; // Ändrat från "Länk"
+          delete formattedRow.permalink;
+        }
+        
+        if (formattedRow.video_plays !== undefined) {
+          formattedRow['Videospelningar'] = formattedRow.video_plays;
+          delete formattedRow.video_plays;
+        }
+        
+        if (formattedRow.video_30sec_views !== undefined) {
+          formattedRow['30-sekundersvisningar'] = formattedRow.video_30sec_views;
+          delete formattedRow.video_30sec_views;
+        }
+        
+        if (formattedRow.avg_video_play_time !== undefined) {
+          formattedRow['Genomsnittlig visningstid'] = formattedRow.avg_video_play_time;
+          delete formattedRow.avg_video_play_time;
+        }
+      } else {
+        // FACEBOOK-specifik formatering
+        if (formattedRow.account_id !== undefined) {
+          formattedRow['Sid-id'] = formattedRow.account_id;
+          delete formattedRow.account_id;
+        }
+        
+        if (formattedRow.account_name !== undefined) {
+          formattedRow['Sidnamn'] = formattedRow.account_name;
+          delete formattedRow.account_name;
+        }
+        
+        // VIKTIGT: Mappa description till "Beskrivning" istället för "Titel"
+        if (formattedRow.description !== undefined) {
+          formattedRow['Beskrivning'] = formattedRow.description;
+          delete formattedRow.description;
+        }
+        
+        // Behåll också Titel-fältet om det finns i originaldata
+        if (formattedRow.title !== undefined) {
+          formattedRow['Titel'] = formattedRow.title;
+          delete formattedRow.title;
+        }
+        
+        if (formattedRow.views !== undefined) {
+          formattedRow['Visningar'] = formattedRow.views;
+          delete formattedRow.views;
+        }
+        
+        if (formattedRow.reach !== undefined) {
+          formattedRow['Räckvidd'] = formattedRow.reach;
+          delete formattedRow.reach;
+        }
+        
+        if (formattedRow.likes !== undefined) {
+          formattedRow['Reaktioner'] = formattedRow.likes;
+          delete formattedRow.likes;
+        }
+        
+        if (formattedRow.comments !== undefined) {
+          formattedRow['Kommentarer'] = formattedRow.comments;
+          delete formattedRow.comments;
+        }
+        
+        if (formattedRow.shares !== undefined) {
+          formattedRow['Delningar'] = formattedRow.shares;
+          delete formattedRow.shares;
+        }
+        
+        if (formattedRow.total_engagement !== undefined) {
+          formattedRow['Reaktioner, kommentarer och delningar'] = formattedRow.total_engagement;
+          delete formattedRow.total_engagement;
+        }
+        
+        if (formattedRow.post_id !== undefined) {
+          formattedRow['Publicerings-id'] = formattedRow.post_id;
+          delete formattedRow.post_id;
+        }
+        
+        if (formattedRow.publish_time !== undefined) {
+          formattedRow['Publiceringstid'] = formattedRow.publish_time;
+          delete formattedRow.publish_time;
+        }
+        
+        if (formattedRow.post_type !== undefined) {
+          formattedRow['Inläggstyp'] = formattedRow.post_type;
+          delete formattedRow.post_type;
+        }
+        
+        if (formattedRow.permalink !== undefined) {
+          formattedRow['Permalänk'] = formattedRow.permalink;
+          delete formattedRow.permalink;
+        }
+        
+        if (formattedRow.total_clicks !== undefined) {
+          formattedRow['Totalt antal klick'] = formattedRow.total_clicks;
+          delete formattedRow.total_clicks;
+        }
+        
+        if (formattedRow.link_clicks !== undefined) {
+          formattedRow['Länkklick'] = formattedRow.link_clicks;
+          delete formattedRow.link_clicks;
+        }
+        
+        if (formattedRow.other_clicks !== undefined) {
+          formattedRow['Övriga klick'] = formattedRow.other_clicks;
+          delete formattedRow.other_clicks;
+        }
       }
       
-      if (formattedRow.account_name !== undefined) {
-        formattedRow['Sidnamn'] = formattedRow.account_name;
-        delete formattedRow.account_name;
-      }
-      
-      // VIKTIGT: Mappa description till "Beskrivning" istället för "Titel"
-      if (formattedRow.description !== undefined) {
-        formattedRow['Beskrivning'] = formattedRow.description;
-        delete formattedRow.description;
-      }
-      
-      // Behåll också Titel-fältet om det finns i originaldata
-      if (formattedRow.title !== undefined) {
-        formattedRow['Titel'] = formattedRow.title;
-        delete formattedRow.title;
-      }
-      
-      if (formattedRow.views !== undefined) {
-        formattedRow['Visningar'] = formattedRow.views;
-        delete formattedRow.views;
-      }
-      
-      if (formattedRow.reach !== undefined) {
-        formattedRow['Räckvidd'] = formattedRow.reach;
-        delete formattedRow.reach;
-      }
-      
-      if (formattedRow.likes !== undefined) {
-        formattedRow['Reaktioner'] = formattedRow.likes;
-        delete formattedRow.likes;
-      }
-      
-      if (formattedRow.comments !== undefined) {
-        formattedRow['Kommentarer'] = formattedRow.comments;
-        delete formattedRow.comments;
-      }
-      
-      if (formattedRow.shares !== undefined) {
-        formattedRow['Delningar'] = formattedRow.shares;
-        delete formattedRow.shares;
-      }
-      
-      if (formattedRow.total_engagement !== undefined) {
-        formattedRow['Reaktioner, kommentarer och delningar'] = formattedRow.total_engagement;
-        delete formattedRow.total_engagement;
-      }
-      
-      if (formattedRow.post_id !== undefined) {
-        formattedRow['Publicerings-id'] = formattedRow.post_id;
-        delete formattedRow.post_id;
-      }
-      
-      if (formattedRow.publish_time !== undefined) {
-        formattedRow['Publiceringstid'] = formattedRow.publish_time;
-        delete formattedRow.publish_time;
-      }
-      
-      if (formattedRow.post_type !== undefined) {
-        formattedRow['Inläggstyp'] = formattedRow.post_type;
-        delete formattedRow.post_type;
-      }
-      
-      if (formattedRow.permalink !== undefined) {
-        formattedRow['Permalänk'] = formattedRow.permalink;
-        delete formattedRow.permalink;
-      }
-      
-      if (formattedRow.total_clicks !== undefined) {
-        formattedRow['Totalt antal klick'] = formattedRow.total_clicks;
-        delete formattedRow.total_clicks;
-      }
-      
-      if (formattedRow.link_clicks !== undefined) {
-        formattedRow['Länkklick'] = formattedRow.link_clicks;
-        delete formattedRow.link_clicks;
-      }
-      
-      if (formattedRow.other_clicks !== undefined) {
-        formattedRow['Övriga klick'] = formattedRow.other_clicks;
-        delete formattedRow.other_clicks;
-      }
+      // Ta bort platform-flagga från exporterad data
+      delete formattedRow.platform;
       
       return formattedRow;
     });
@@ -196,6 +309,16 @@ export function ExportPanel({ dataCount, filesData, onExportComplete }) {
       
       // Formatera data för export
       const formattedData = formatForExport(data);
+      
+      // Om vi inte har några rader efter filtrering, visa ett felmeddelande
+      if (formattedData.length === 0) {
+        setExportResult({
+          success: false,
+          message: `Ingen ${selectedPlatform === 'instagram' ? 'Instagram' : 'Facebook'}-data att exportera. Kontrollera att du har importerat data från rätt plattform.`
+        });
+        setIsExporting(false);
+        return;
+      }
       
       // Skapa ett filnamn baserat på datumintervall
       const fileName = createFileName();
@@ -237,14 +360,16 @@ export function ExportPanel({ dataCount, filesData, onExportComplete }) {
       const blob = new Blob([csvWithBOM], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.setAttribute('href', url);
+      link.href = url;
       link.setAttribute('download', `${fileName}.csv`);
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
       
-      // Rensa URL
-      setTimeout(() => URL.revokeObjectURL(url), 100);
+      // Städa upp
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+      }, 100);
       
       setExportResult({
         success: true,
@@ -268,7 +393,8 @@ export function ExportPanel({ dataCount, filesData, onExportComplete }) {
       const worksheet = XLSX.utils.json_to_sheet(data);
       
       // Lägg till arket i arbetsboken
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Meta Data");
+      const sheetName = selectedPlatform === 'instagram' ? 'Instagram Data' : 'Facebook Data';
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
       
       // Generera en Excel-fil och ladda ner den
       XLSX.writeFile(workbook, `${fileName}.xlsx`);
@@ -286,21 +412,61 @@ export function ExportPanel({ dataCount, filesData, onExportComplete }) {
     }
   };
   
+  // Räkna antal rader per plattform
+  const countPlatformData = () => {
+    const filterByPlatform = async () => {
+      try {
+        const data = await getPostViewData();
+        if (!data || !Array.isArray(data)) return 0;
+        
+        return data.filter(row => 
+          row.platform === selectedPlatform || 
+          (!row.platform && selectedPlatform === 'facebook') // För bakåtkompatibilitet
+        ).length;
+      } catch (error) {
+        console.error('Fel vid räkning av plattformsdata:', error);
+        return 0;
+      }
+    };
+    
+    const [platformCount, setPlatformCount] = useState(0);
+    
+    React.useEffect(() => {
+      filterByPlatform().then(count => setPlatformCount(count));
+    }, [selectedPlatform]);
+    
+    return platformCount;
+  };
+  
+  const platformRowCount = countPlatformData();
+  
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Exportera data</CardTitle>
+        <CardTitle className="flex items-center">
+          {selectedPlatform === 'instagram' ? (
+            <>
+              <Instagram className="mr-2 h-5 w-5" />
+              Exportera Instagram-data
+            </>
+          ) : (
+            <>
+              <Facebook className="mr-2 h-5 w-5" />
+              Exportera Facebook-data
+            </>
+          )}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          <div className="bg-primary/5 p-4 rounded-md border">
+          <div className={`p-4 rounded-md border ${selectedPlatform === 'instagram' ? 'bg-primary/5 border-primary/20' : 'bg-primary/5 border-primary/20'}`}>
             <div className="flex flex-col space-y-2">
               <div className="font-medium">Exportinformation</div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="text-muted-foreground">Antal importerade filer:</div>
-                <div className="font-medium">{filesData.length}</div>
+                <div className="font-medium">{filesData.filter(f => f.platform === selectedPlatform || (!f.platform && selectedPlatform === 'facebook')).length}</div>
                 <div className="text-muted-foreground">Totalt antal datarader:</div>
-                <div className="font-medium">{dataCount}</div>
+                <div className="font-medium">{platformRowCount}</div>
                 <div className="text-muted-foreground">Filnamn kommer bli:</div>
                 <div className="font-medium">{createFileName()}.csv/.xlsx</div>
               </div>
@@ -314,15 +480,15 @@ export function ExportPanel({ dataCount, filesData, onExportComplete }) {
               onCheckedChange={setPreserveFormat}
             />
             <Label htmlFor="preserve-format">
-              Exportera i Facebook-kompatibelt format (rekommenderas)
+              Exportera i {selectedPlatform === 'instagram' ? 'Instagram' : 'Facebook'}-kompatibelt format (rekommenderas)
             </Label>
           </div>
           
           <div className="text-sm text-muted-foreground">
             <p>
               {preserveFormat 
-                ? "Exporterar data med Facebook/Meta-kolumnnamn för kompatibilitet med Facebook-appen."
-                : "Exporterar data med interna kolumnnamn. Detta format kanske inte är kompatibelt med Facebook-appen."}
+                ? `Exporterar data med ${selectedPlatform === 'instagram' ? 'Instagram' : 'Facebook'}-kolumnnamn för kompatibilitet med ${selectedPlatform === 'instagram' ? 'Instagram Insights' : 'Facebook/Meta Business Suite'}.`
+                : "Exporterar data med interna kolumnnamn. Detta format kanske inte är kompatibelt med originalprogrammet."}
             </p>
           </div>
           
@@ -340,7 +506,7 @@ export function ExportPanel({ dataCount, filesData, onExportComplete }) {
           <div className="flex space-x-4">
             <Button
               onClick={() => handleExport('csv')}
-              disabled={isExporting || dataCount === 0}
+              disabled={isExporting || platformRowCount === 0}
               className="flex-1"
               variant="default"
             >
@@ -358,7 +524,7 @@ export function ExportPanel({ dataCount, filesData, onExportComplete }) {
             </Button>
             <Button
               onClick={() => handleExport('excel')}
-              disabled={isExporting || dataCount === 0}
+              disabled={isExporting || platformRowCount === 0}
               variant="outline"
               className="flex-1"
             >
@@ -378,12 +544,12 @@ export function ExportPanel({ dataCount, filesData, onExportComplete }) {
           
           <div className="text-sm text-muted-foreground mt-4">
             <p>
-              Den exporterade filen kommer att innehålla all data från dina importerade CSV-filer, 
+              Den exporterade filen kommer att innehålla all {selectedPlatform === 'instagram' ? 'Instagram' : 'Facebook'}-data från dina importerade CSV-filer, 
               kombinerad till en enda fil. Dubbletter filtreras bort automatiskt baserat på inläggs-ID.
             </p>
-            {dataCount === 0 && (
+            {platformRowCount === 0 && (
               <p className="mt-2 text-red-600">
-                Ingen data tillgänglig för export. Importera minst en CSV-fil först.
+                Ingen {selectedPlatform === 'instagram' ? 'Instagram' : 'Facebook'}-data tillgänglig för export. Importera minst en CSV-fil från {selectedPlatform === 'instagram' ? 'Instagram' : 'Facebook'} först.
               </p>
             )}
           </div>

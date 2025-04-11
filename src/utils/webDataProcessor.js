@@ -1,8 +1,9 @@
 /**
  * Web Data Processor
  * 
- * Webbversion av Facebook databearbetning som använder
+ * Webbversion av Meta-plattformarnas databearbetning som använder
  * webbläsarens API:er för att hantera och bearbeta data.
+ * Stöd för både Facebook- och Instagram-data.
  */
 import Papa from 'papaparse';
 import { 
@@ -10,16 +11,37 @@ import {
   getAccountViewData, 
   getPostViewData
 } from './webStorageService';
-import { DEFAULT_MAPPINGS, getValue, normalizeText } from '../components/ColumnMappingEditor/columnMappingService';
+import { 
+  DEFAULT_MAPPINGS, 
+  getValue, 
+  normalizeText, 
+  isInstagramData
+} from '../components/ColumnMappingEditor/columnMappingService';
 
-// Fältaliaser för kompatibilitet med Facebook
+// Fältaliaser för kompatibilitet med Facebook och Instagram
 const FIELD_ALIASES = {
+  // Facebook alias
   'page_id': 'account_id',
   'page_name': 'account_name',
   'reactions': 'likes',
   'engagement_total': 'total_engagement',
   'post_reach': 'reach',
-  'impressions': 'views'
+  'impressions': 'views',
+  
+  // Instagram alias
+  'instagram_id': 'account_id',
+  'profile_name': 'account_name',
+  'username': 'account_username',
+  'media_id': 'post_id',
+  'media_type': 'post_type',
+  'media_url': 'permalink',
+  'caption': 'description',
+  'timestamp': 'publish_time',
+  'impressions': 'views',
+  'saves': 'saves',
+  'profile_visits': 'profile_visits',
+  'follows': 'follows',
+  'total_interactions': 'total_engagement'
 };
 
 // Direkta mappningar för Facebook-specifika kolumnnamn
@@ -36,22 +58,58 @@ const FACEBOOK_DIRECT_MAPPINGS = {
   'Länkklick': 'link_clicks',
   'Övriga klick': 'other_clicks',
   'Publiceringstid': 'publish_time',
-  'Titel': 'description',      // Mappar Titel till description
+  'Titel': 'description',
   'Inläggstyp': 'post_type',
   'Permalänk': 'permalink',
   'Publicerings-id': 'post_id'
 };
 
-// Summeringsbara värden
-const SUMMARIZABLE_COLUMNS = [
-  "views", "likes", "comments", "shares", "total_engagement", 
+// Direkta mappningar för Instagram-specifika kolumnnamn
+const INSTAGRAM_DIRECT_MAPPINGS = {
+  'Konto-ID': 'account_id',
+  'Kontonamn': 'account_name',
+  'Användarnamn': 'account_username',
+  'Inläggs-ID': 'post_id',
+  'Bildtext': 'description',
+  'Publicerat': 'publish_time',
+  'Medietyp': 'post_type',
+  'Länk': 'permalink',
+  'Intryck': 'views',
+  'Räckvidd': 'reach',
+  'Interaktioner totalt': 'total_engagement',
+  'Gilla-markeringar': 'likes',
+  'Kommentarer': 'comments',
+  'Delningar': 'shares',
+  'Sparade': 'saves',
+  'Profilbesök': 'profile_visits',
+  'Följare': 'follows',
+  '30-sekundersvisningar': 'video_30sec_views',
+  'Videospelningar': 'video_plays',
+  'Genomsnittlig visningstid': 'avg_video_play_time'
+};
+
+// Summeringsbara värden - gemensamma för båda plattformarna
+const COMMON_SUMMARIZABLE_COLUMNS = [
+  "views", "likes", "comments", "shares", "total_engagement", "reach"
+];
+
+// Facebook-specifika summeringsbara värden
+const FACEBOOK_SUMMARIZABLE_COLUMNS = [
+  ...COMMON_SUMMARIZABLE_COLUMNS,
   "total_clicks", "other_clicks", "link_clicks"
+];
+
+// Instagram-specifika summeringsbara värden
+const INSTAGRAM_SUMMARIZABLE_COLUMNS = [
+  ...COMMON_SUMMARIZABLE_COLUMNS,
+  "saves", "profile_visits", "follows", "video_plays", "video_30sec_views"
 ];
 
 // Metadata och icke-summeringsbara värden
 const NON_SUMMARIZABLE_COLUMNS = [
   "post_id", "account_id", "account_name", "account_username", 
-  "description", "publish_time", "date", "post_type", "permalink"
+  "description", "publish_time", "date", "post_type", "permalink",
+  "avg_video_play_time" // Genomsnittlig visningstid kan inte summeras direkt
 ];
 
 /**
@@ -76,39 +134,135 @@ function formatSwedishDate(date) {
 }
 
 /**
+ * Detekterar om en CSV-fil är från Instagram baserat på kolumnnamn
+ * @param {Object} firstRow - Första raden i CSV-data
+ * @returns {boolean} - true om det är Instagram-data
+ */
+function detectDataSource(firstRow) {
+  if (!firstRow) return { isInstagram: false, isFacebook: false };
+  
+  console.log("Detekterar datakälla från följande kolumner:", Object.keys(firstRow));
+  
+  // Instagram-specifika kolumner - utöka med fler kännetecken från Instagram-export
+  const instagramColumns = [
+    "Användarnamn", "Konto-ID", "Kontonamn", "Medietyp", "Bildtext", 
+    "Sparade", "Profilbesök", "Följare", "Intryck", 
+    "Videospelningar", "30-sekundersvisningar", "Genomsnittlig visningstid",
+    // Engelska varianter
+    "Username", "Profile Name", "Account ID", "Media Type", "Caption",
+    "Saves", "Profile Visits", "New Followers", "Impressions"
+  ];
+  
+  // Facebook-specifika kolumner
+  const facebookColumns = [
+    "Sid-id", "Sidnamn", "Inläggstyp", "Reaktioner", 
+    "Visningar", "Totalt antal klick", "Länkklick", "Övriga klick",
+    // Engelska varianter
+    "Page ID", "Page Name", "Post Type", "Reactions",
+    "Views", "Total Clicks", "Link Clicks"
+  ];
+  
+  // Kontrollera Instagram-kolumner
+  let instagramMatches = 0;
+  let instagramMatchedColumns = [];
+  for (const col of instagramColumns) {
+    if (firstRow[col] !== undefined) {
+      instagramMatches++;
+      instagramMatchedColumns.push(col);
+    }
+  }
+  
+  // Kontrollera Facebook-kolumner
+  let facebookMatches = 0;
+  let facebookMatchedColumns = [];
+  for (const col of facebookColumns) {
+    if (firstRow[col] !== undefined) {
+      facebookMatches++;
+      facebookMatchedColumns.push(col);
+    }
+  }
+  
+  // Specialfall för Instagram-specifika indikatorer
+  const hasInstagramIndicators = 
+    Object.keys(firstRow).some(key => 
+      key.includes('saves') || 
+      key.includes('profile visit') || 
+      key.includes('follows') || 
+      key.includes('impression') ||
+      key.includes('Spara') || 
+      key.includes('Profilbes') || 
+      key.includes('Följ') || 
+      key.includes('Intryck')
+    );
+  
+  if (hasInstagramIndicators) {
+    instagramMatches += 3; // Ge extra vikt till dessa starka indikatorer
+  }
+  
+  // Avgör plattform baserat på matchande kolumner
+  const isInstagram = instagramMatches > facebookMatches || instagramMatches > 0 && facebookMatches === 0 || hasInstagramIndicators;
+  const isFacebook = !isInstagram && (facebookMatches > 0 || facebookMatches > instagramMatches);
+  
+  console.log("Plattformsdetektering:", {
+    isInstagram,
+    isFacebook,
+    instagramMatches,
+    facebookMatches,
+    matchedInstagramColumns: instagramMatchedColumns,
+    matchedFacebookColumns: facebookMatchedColumns,
+    hasInstagramIndicators
+  });
+  
+  return { 
+    isInstagram, 
+    isFacebook,
+    matchedInstagramColumns: instagramMatches,
+    matchedFacebookColumns: facebookMatches,
+    instagramMatchedColumns,
+    facebookMatchedColumns,
+    hasInstagramIndicators
+  };
+}
+
+/**
  * Räknar unika konton i en datamängd
  * @param {Array} data - Datamängden att analysera
+ * @param {boolean} isInstagramData - Om det är Instagram-data
  * @returns {number} - Antal unika konton
  */
-function countUniqueAccounts(data) {
+function countUniqueAccounts(data, isInstagramData = false) {
   if (!Array.isArray(data) || data.length === 0) return 0;
   
   // Använd Set för att hålla unika account_id/page_id
   const uniqueAccountIds = new Set();
   
-  // Logga första raden för debugging
-  if (data.length > 0) {
-    console.log('Analyzing first row for account detection:', {
-      firstRow: data[0],
-      has_Sid_id: data[0]['Sid-id'] !== undefined,
-      has_account_id: data[0]['account_id'] !== undefined,
-      has_page_id: data[0]['page_id'] !== undefined
-    });
-  }
-  
   data.forEach(row => {
-    // Kontrollera först direkta kolumnnamn från Facebook
-    if (row['Sid-id'] !== undefined) {
-      uniqueAccountIds.add(String(row['Sid-id']));
-      return; // Om vi hittade ID via denna metod, kan vi fortsätta med nästa rad
+    // Anpassa kolumnnamn baserat på källa (Instagram eller Facebook)
+    if (isInstagramData) {
+      // Instagram-specifika kolumner
+      if (row['Konto-ID'] !== undefined) {
+        uniqueAccountIds.add(String(row['Konto-ID']));
+        return;
+      }
+    } else {
+      // Facebook-specifika kolumner
+      if (row['Sid-id'] !== undefined) {
+        uniqueAccountIds.add(String(row['Sid-id']));
+        return;
+      }
     }
     
-    // Kontrollera både account_id och page_id för att vara säker
+    // Försök med det generella account_id/page_id-mönstret
     let accountId = getValue(row, 'account_id');
     
-    // Om account_id inte finns, prova med page_id direkt
-    if (!accountId && row.page_id) {
-      accountId = row.page_id;
+    // Om account_id inte finns, prova med page_id direkt för Facebook
+    // eller instagram_id för Instagram
+    if (!accountId) {
+      if (isInstagramData && row.instagram_id) {
+        accountId = row.instagram_id;
+      } else if (!isInstagramData && row.page_id) {
+        accountId = row.page_id;
+      }
     }
     
     if (accountId) {
@@ -116,9 +270,7 @@ function countUniqueAccounts(data) {
     }
   });
   
-  // Logga resultat för debugging
-  console.log('Found unique account IDs:', uniqueAccountIds.size);
-  return uniqueAccountIds.size || 1; // Fallback till 1 om inga konton hittas (bättre än 0)
+  return uniqueAccountIds.size || 1; // Fallback till 1 om inga konton hittas
 }
 
 /**
@@ -187,22 +339,38 @@ function handleDuplicates(data, columnMappings, existingData = []) {
 }
 
 /**
- * Förbearbeta Facebook-rad innan mappning
+ * Förbearbeta rad innan mappning baserat på plattform
  * @param {Object} row - Raden att förbearbeta
+ * @param {boolean} isInstagramData - Om det är Instagram-data
  */
-function preprocessFacebookRow(row) {
-  // Kontrollera vilka kolumner som finns i första raden
-  console.log('PreprocessFacebookRow - Available columns:', Object.keys(row));
-  console.log('PreprocessFacebookRow - Titel value:', row['Titel']);
-  console.log('PreprocessFacebookRow - Beskrivning value:', row['Beskrivning']);
-  
+function preprocessDataRow(row, isInstagramData = false) {
   // Skapa en kopia för att inte modifiera originalet
   const processedRow = { ...row };
   
-  // För Facebook, använd alltid Titel som description
-  if (processedRow['Titel'] !== undefined) {
-    processedRow['description'] = processedRow['Titel'];
-    console.log('PreprocessFacebookRow - Set description from Titel:', processedRow['description']);
+  if (isInstagramData) {
+    // INSTAGRAM-SPECIFIK FÖRBEARBETNING
+    
+    // Om vi har Bildtext, använd den som description
+    if (processedRow['Bildtext'] !== undefined) {
+      processedRow['description'] = processedRow['Bildtext'];
+    }
+    
+    // Om vi har Intryck, använd dem som views
+    if (processedRow['Intryck'] !== undefined) {
+      processedRow['views'] = processedRow['Intryck'];
+    }
+    
+    // Om vi har 'Publicerat', använd det som publish_time
+    if (processedRow['Publicerat'] !== undefined) {
+      processedRow['publish_time'] = processedRow['Publicerat'];
+    }
+  } else {
+    // FACEBOOK-SPECIFIK FÖRBEARBETNING
+    
+    // För Facebook, använd alltid Titel som description
+    if (processedRow['Titel'] !== undefined) {
+      processedRow['description'] = processedRow['Titel'];
+    }
   }
   
   return processedRow;
@@ -212,54 +380,29 @@ function preprocessFacebookRow(row) {
  * Mappar CSV-kolumnnamn till interna namn med hjälp av kolumnmappningar
  * @param {Object} row - Raden att mappa
  * @param {Object} columnMappings - Användarkonfigurerade kolumnmappningar
- * @param {boolean} isFacebookData - Om det är Facebook-data
+ * @param {boolean} isInstagramData - Om det är Instagram-data
  * @returns {Object} - Mappade raden
  */
-function mapColumnNames(row, columnMappings, isFacebookData = false) {
+function mapColumnNames(row, columnMappings, isInstagramData = false) {
   const mappedRow = {};
   
-  // För Facebook-data, förbearbeta för att sätta viktiga värden direkt
-  if (isFacebookData) {
-    // För debugging
-    console.log('Facebook data detected, before mapping columns:', 
-      Object.keys(row).includes('Titel') ? 'Has Titel' : 'No Titel',
-      Object.keys(row).includes('Visningar') ? 'Has Visningar' : 'No Visningar'
-    );
-    
-    // DIREKT ÖVERFÖRING AV FACEBOOK-SPECIFIKA FÄLT
-    // Sätt description direkt om Titel finns
-    if (row['Titel'] !== undefined) {
-      mappedRow.description = row['Titel'];
-      console.log('DIRECT SET: Using Titel as description:', mappedRow.description);
-    }
-    
-    // Sätt views direkt om Visningar finns
-    if (row['Visningar'] !== undefined) {
-      mappedRow.views = row['Visningar'];
-      console.log('DIRECT SET: Using Visningar as views:', mappedRow.views);
-    }
-    
-    // Sätt account_id direkt om Sid-id finns
-    if (row['Sid-id'] !== undefined) {
-      mappedRow.account_id = row['Sid-id'];
-      console.log('DIRECT SET: Using Sid-id as account_id:', mappedRow.account_id);
-    }
-    
-    // Sätt account_name direkt om Sidnamn finns
-    if (row['Sidnamn'] !== undefined) {
-      mappedRow.account_name = row['Sidnamn'];
-      console.log('DIRECT SET: Using Sidnamn as account_name:', mappedRow.account_name);
+  // Förbearbeta raden baserat på datakälla
+  const processedRow = preprocessDataRow(row, isInstagramData);
+  
+  // Bestäm vilka direkta mappningar som ska användas
+  const directMappings = isInstagramData ? INSTAGRAM_DIRECT_MAPPINGS : FACEBOOK_DIRECT_MAPPINGS;
+  
+  // För Instagram/Facebook-data, utför plattformsspecifik direktmappning
+  for (const [originalCol, internalName] of Object.entries(directMappings)) {
+    if (processedRow[originalCol] !== undefined) {
+      mappedRow[internalName] = processedRow[originalCol];
     }
   }
   
-  // Standard mappning för övriga fält
-  Object.entries(row).forEach(([originalCol, value]) => {
-    // Hoppa över Facebook-specifika fält vi redan har behandlat
-    if (isFacebookData && 
-       (originalCol === 'Titel' && mappedRow.description !== undefined ||
-        originalCol === 'Visningar' && mappedRow.views !== undefined ||
-        originalCol === 'Sid-id' && mappedRow.account_id !== undefined ||
-        originalCol === 'Sidnamn' && mappedRow.account_name !== undefined)) {
+  // Standard mappning för övriga fält som inte fångats upp av direktmappning
+  Object.entries(processedRow).forEach(([originalCol, value]) => {
+    // Hoppa över fält vi redan har mappat direkt
+    if (directMappings[originalCol] !== undefined && mappedRow[directMappings[originalCol]] !== undefined) {
       return;
     }
     
@@ -282,12 +425,6 @@ function mapColumnNames(row, columnMappings, isFacebookData = false) {
     mappedRow[internalName] = value;
   });
   
-  // Sista kontroll: om vi saknar description och har Titel, använd Titel
-  if (mappedRow.description === undefined && row['Titel'] !== undefined) {
-    mappedRow.description = row['Titel'];
-    console.log('FALLBACK: Setting description from Titel:', mappedRow.description);
-  }
-  
   return mappedRow;
 }
 
@@ -297,9 +434,11 @@ function mapColumnNames(row, columnMappings, isFacebookData = false) {
 export async function analyzeCSVFile(csvContent) {
   return new Promise((resolve, reject) => {
     try {
+      console.log("analyzeCSVFile - Analyserar CSV-fil...");
+      
       Papa.parse(csvContent, {
         header: true,
-        preview: 5, // Analysera bara några rader för snabbhet
+        preview: 10, // Utöka antalet rader för bättre sampling
         skipEmptyLines: true,
         complete: (results) => {
           if (!results.data || results.data.length === 0) {
@@ -307,8 +446,33 @@ export async function analyzeCSVFile(csvContent) {
             return;
           }
           
+          console.log("analyzeCSVFile - Första radens kolumner:", Object.keys(results.data[0]));
+          
           // Uppskatta totalt antal rader (approximativt)
           const linesCount = csvContent.split('\n').length - 1; // -1 för rubrikraden
+          
+          // Detektera datakälla med förbättrad logik
+          const dataSource = detectDataSource(results.data[0]);
+          
+          // Försök att detektera datakälla även från ytterligare rader för bättre noggrannhet
+          if (results.data.length > 1) {
+            const additionalDataSource = detectDataSource(results.data[1]);
+            
+            // Om den andra raden tydligare visar Instagram-indikatorer
+            if (additionalDataSource.hasInstagramIndicators && !dataSource.hasInstagramIndicators) {
+              console.log("analyzeCSVFile - Andra raden visade Instagram-indikatorer som inte fanns i första raden");
+              dataSource.hasInstagramIndicators = true;
+              // Uppdatera resultatet
+              dataSource.isInstagram = true;
+              dataSource.isFacebook = false;
+            }
+          }
+          
+          console.log("analyzeCSVFile - Källdetektering slutförd:", {
+            isInstagram: dataSource.isInstagram,
+            isFacebook: dataSource.isFacebook,
+            hasInstagramIndicators: dataSource.hasInstagramIndicators
+          });
           
           resolve({
             columns: Object.keys(results.data[0]).length,
@@ -316,7 +480,10 @@ export async function analyzeCSVFile(csvContent) {
             rows: linesCount,
             sampleData: results.data.slice(0, 3), // Några exempel
             fileSize: csvContent.length,
-            fileSizeKB: Math.round(csvContent.length / 1024)
+            fileSizeKB: Math.round(csvContent.length / 1024),
+            isInstagramData: dataSource.isInstagram,
+            isFacebookData: dataSource.isFacebook,
+            dataSourceDetails: dataSource
           });
         },
         error: (error) => {
@@ -332,23 +499,9 @@ export async function analyzeCSVFile(csvContent) {
 }
 
 /**
- * Detekterar om en CSV-fil är från Facebook baserat på kolumnnamn
- * @param {Object} firstRow - Första raden i CSV-data
- * @returns {boolean} - true om det är Facebook-data
- */
-function isFacebookData(firstRow) {
-  // Kontrollera Facebook-specifika kolumner
-  return firstRow && (
-    firstRow['Sid-id'] !== undefined || 
-    firstRow['Sidnamn'] !== undefined ||
-    firstRow['Inläggstyp'] !== undefined
-  );
-}
-
-/**
  * Bearbetar CSV-innehåll och returnerar aggregerad data
  */
-export async function processPostData(csvContent, columnMappings, shouldMergeWithExisting = false, fileName = 'Facebook CSV') {
+export async function processPostData(csvContent, columnMappings, shouldMergeWithExisting = false, fileName = 'CSV', selectedPlatform = null) {
   return new Promise(async (resolve, reject) => {
     try {
       // Om vi ska slå samman med befintlig data, hämta den först
@@ -379,59 +532,50 @@ export async function processPostData(csvContent, columnMappings, shouldMergeWit
             return;
           }
           
-          // Detektera om det är Facebook-data
-          const isFromFacebook = isFacebookData(results.data[0]);
-          console.log('Data source detected:', isFromFacebook ? 'Facebook' : 'Unknown', 'First row keys:', Object.keys(results.data[0]));
+          // Detektera plattform automatiskt om den inte är angiven
+          const dataSource = detectDataSource(results.data[0]);
+          console.log("processPostData - Detekterad datakälla:", dataSource);
           
-          // För Facebook, kontrollera alla kolumnnamn och deras värden (debugging)
-          if (isFromFacebook && results.data.length > 0) {
-            const firstRow = results.data[0];
-            console.log('FACEBOOK DATA DETECTED - First row:', firstRow);
-            
-            // Kontrollera om det finns Visningar och Titel
-            const hasVisningar = 'Visningar' in firstRow;
-            const hasTitel = 'Titel' in firstRow;
-            
-            console.log('Column check:', { 
-              hasVisningar, 
-              hasTitel,
-              visningarValue: hasVisningar ? firstRow['Visningar'] : undefined,
-              titelValue: hasTitel ? firstRow['Titel'] : undefined
-            });
+          // Om användaren valt Instagram men systemet detekterade Facebook, men det finns Instagram-indikatorer
+          // Vi prioriterar användarens val och Instagram-indikatorer
+          let isInstagramSource = dataSource.isInstagram;
+          if (selectedPlatform === 'instagram') {
+            // Ge mer vikt till användarens val när den har valt Instagram
+            if (dataSource.hasInstagramIndicators || dataSource.matchedInstagramColumns > 0) {
+              isInstagramSource = true;
+              console.log("processPostData - Använder Instagram på grund av användarval och indikatorer");
+            } else {
+              isInstagramSource = true; // Fortfarande lita på användarens val
+              console.log("processPostData - Använder Instagram enbart baserat på användarval");
+            }
+          } else if (selectedPlatform === 'facebook') {
+            // Om användaren valt Facebook men filen har starka Instagram-indikatorer, visa varning
+            if (dataSource.isInstagram) {
+              console.warn('Varning: Filen ser ut att vara en Instagram CSV men Facebook-plattform är vald');
+              // Här behåller vi isFacebook=true eftersom användaren har valt det
+              isInstagramSource = false;
+            } else {
+              isInstagramSource = false;
+            }
+          } else {
+            // Om inget val gjorts, använd detekteringen
+            isInstagramSource = dataSource.isInstagram;
           }
+          
+          console.log("processPostData - Använder datakälla:", isInstagramSource ? "Instagram" : "Facebook");
           
           console.log('CSV-data analyserad:', {
             rows: results.data.length,
-            columns: Object.keys(results.data[0]).length
+            columns: Object.keys(results.data[0]).length,
+            platform: isInstagramSource ? 'Instagram' : 'Facebook',
+            dataSource
           });
           
-          // För Facebook, förbearbeta data för att sätta description från Titel
+          // Förbearbeta data enligt plattformsspecifik logik
           let processedData = results.data;
-          if (isFromFacebook) {
-            console.log('Preprocessing Facebook data for Titel handling');
-            processedData = results.data.map(row => {
-              if (row['Titel'] !== undefined) {
-                // Skapa direkta kopior av viktiga fält
-                return { 
-                  ...row, 
-                  // Sätt description direkt från Titel
-                  description: row['Titel']
-                };
-              }
-              return row;
-            });
-            
-            // Debugging - kontrollera första raden efter förbearbetning
-            if (processedData.length > 0) {
-              console.log('After preprocessing, first row description:', 
-                processedData[0].description,
-                'Original Titel:', results.data[0]['Titel']
-              );
-            }
-          }
           
           // Räkna unika konton i den nya filen INNAN sammanslagningen
-          const uniqueAccountsInFile = countUniqueAccounts(processedData);
+          const uniqueAccountsInFile = countUniqueAccounts(processedData, isInstagramSource);
           console.log('Unika konton hittades:', uniqueAccountsInFile);
           
           // Identifiera och filtrera dubletter med tillgång till kolumnmappningar
@@ -462,6 +606,7 @@ export async function processPostData(csvContent, columnMappings, shouldMergeWit
               const publishDate = getValue(post, 'publish_time') || 
                                  getValue(post, 'date') || 
                                  post['Publiceringstid'] || 
+                                 post['Publicerat'] ||
                                  post['Datum'];
               
               if (publishDate) {
@@ -481,32 +626,21 @@ export async function processPostData(csvContent, columnMappings, shouldMergeWit
             });
           }
           
+          // Välj rätt uppsättning summeringsbara kolumner baserat på plattform
+          const summarizableColumns = isInstagramSource 
+            ? INSTAGRAM_SUMMARIZABLE_COLUMNS 
+            : FACEBOOK_SUMMARIZABLE_COLUMNS;
+          
           // Bearbeta varje unik rad från nya data
           filteredData.forEach((row, index) => {
             // Hoppa över om raden redan finns i perPost (duplicate check)
-            // Detta är en extra säkerhet utöver handleDuplicates
             const postId = getValue(row, 'post_id');
             if (postId && perPost.some(p => getValue(p, 'post_id') === postId)) {
               return;
             }
             
-            // För debugging, kontrollera första raden
-            const isFirstRow = index === 0;
-            if (isFirstRow && isFromFacebook) {
-              console.log('Processing first row of Facebook data:', row);
-              console.log('Row Titel before mapping:', row['Titel']);
-              console.log('Row description before mapping (if exists):', row['description']);
-            }
-            
-            // Mappa kolumnnamn till interna namn
-            const mappedRow = mapColumnNames(row, columnMappings, isFromFacebook);
-            
-            // För debugging, kontrollera mappat resultat
-            if (isFirstRow && isFromFacebook) {
-              console.log('Mapped row keys:', Object.keys(mappedRow));
-              console.log('description value after mapping:', mappedRow.description);
-              console.log('views value after mapping:', mappedRow.views);
-            }
+            // Mappa kolumnnamn till interna namn, med plattformsspecifik logik
+            const mappedRow = mapColumnNames(row, columnMappings, isInstagramSource);
             
             // Använd getValue för att få accountID för att säkerställa att vi använder rätt fält
             const accountID = getValue(mappedRow, 'account_id') || 'unknown';
@@ -514,15 +648,19 @@ export async function processPostData(csvContent, columnMappings, shouldMergeWit
             if (!accountID) return;
             
             // Använd getValue för att säkerställa att account_name finns
-            const accountName = getValue(mappedRow, 'account_name') || 'Okänd sida';
+            const accountName = getValue(mappedRow, 'account_name') || 
+                                (isInstagramSource ? 'Okänt Instagram-konto' : 'Okänd Facebook-sida');
             
-            // Ingen account_username i FB, men vi behåller fältet för kompabilitet
-            const accountUsername = '';
+            // Hantera account_username specifikt för Instagram
+            const accountUsername = isInstagramSource 
+              ? (getValue(mappedRow, 'account_username') || '')
+              : '';
             
             // Samla in publiceringsdatum för datumintervall
             const publishDate = getValue(mappedRow, 'publish_time') || 
                                getValue(mappedRow, 'date') || 
                                mappedRow['Publiceringstid'] || 
+                               mappedRow['Publicerat'] ||
                                mappedRow['Datum'];
             
             if (publishDate) {
@@ -537,21 +675,20 @@ export async function processPostData(csvContent, columnMappings, shouldMergeWit
               perKonto[accountID] = { 
                 "account_id": accountID,
                 "account_name": accountName,
-                "account_username": accountUsername
+                "account_username": accountUsername,
+                "platform": isInstagramSource ? 'instagram' : 'facebook'
               };
-              SUMMARIZABLE_COLUMNS.forEach(col => perKonto[accountID][col] = 0);
+              summarizableColumns.forEach(col => perKonto[accountID][col] = 0);
             }
             
+            // Lägg till plattformsflagga i rad-data
+            mappedRow.platform = isInstagramSource ? 'instagram' : 'facebook';
+            
             // Summera värden
-            SUMMARIZABLE_COLUMNS.forEach(col => {
+            summarizableColumns.forEach(col => {
               const value = getValue(mappedRow, col);
               if (value !== null && !isNaN(parseFloat(value))) {
                 perKonto[accountID][col] += parseFloat(value);
-                
-                // För debugging, spåra views-värden
-                if (col === 'views' && isFirstRow) {
-                  console.log(`Adding views value ${value} to account ${accountID}`);
-                }
               }
             });
             
@@ -577,14 +714,15 @@ export async function processPostData(csvContent, columnMappings, shouldMergeWit
           
           // Skapa filmetadataobjekt för att spåra uppladdad fil
           const fileInfo = {
-            filename: fileName || 'Facebook CSV', // Använd det riktiga filnamnet
-            originalFileName: fileName || 'Facebook CSV', // Spara originalfilnamnet för dublettkontroll
+            filename: fileName || 'CSV', 
+            originalFileName: fileName || 'CSV',
             rowCount: results.data.length,
             duplicatesRemoved: stats.duplicates,
-            // Använd det räknade värdet för unika konton i filen
             accountCount: uniqueAccountsInFile,
             dateRange,
-            isFromFacebook: isFromFacebook
+            platform: isInstagramSource ? 'instagram' : 'facebook',
+            isInstagramData: isInstagramSource,
+            isFacebookData: !isInstagramSource
           };
           
           // Spara data via webStorageService
@@ -602,7 +740,7 @@ export async function processPostData(csvContent, columnMappings, shouldMergeWit
                   dateRange: dateRange,
                   isMergedData: shouldMergeWithExisting,
                   filename: fileName,
-                  isFromFacebook: isFromFacebook
+                  platform: isInstagramSource ? 'instagram' : 'facebook'
                 }
               });
             })
@@ -643,6 +781,13 @@ export function getUniquePageNames(data) {
 }
 
 /**
- * Exportfunktioner för användning i komponenter
+ * Exportfunktioner och variabler för användning i komponenter
  */
-export { SUMMARIZABLE_COLUMNS, NON_SUMMARIZABLE_COLUMNS, FIELD_ALIASES };
+export { 
+  FACEBOOK_SUMMARIZABLE_COLUMNS, 
+  INSTAGRAM_SUMMARIZABLE_COLUMNS,
+  COMMON_SUMMARIZABLE_COLUMNS,
+  NON_SUMMARIZABLE_COLUMNS, 
+  FIELD_ALIASES,
+  detectDataSource
+};

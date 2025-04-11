@@ -10,15 +10,17 @@ import {
   AlertCircle,
   Info,
   FileText,
-  FilesIcon
+  FilesIcon,
+  Instagram,
+  Facebook
 } from 'lucide-react';
 import { handleFileUpload, getMemoryUsageStats, getUploadedFilesMetadata } from '@/utils/webStorageService';
-import { processPostData, analyzeCSVFile } from '@/utils/webDataProcessor';
+import { processPostData, analyzeCSVFile, detectDataSource } from '@/utils/webDataProcessor';
 import { useColumnMapper } from './useColumnMapper';
 import { MemoryIndicator } from '../MemoryIndicator/MemoryIndicator';
 import { calculateMemoryWithNewFile } from '@/utils/memoryUtils';
 
-export function FileUploader({ onDataProcessed, onCancel, existingData = false }) {
+export function FileUploader({ onDataProcessed, onCancel, existingData = false, selectedPlatform }) {
   const [files, setFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -35,6 +37,7 @@ export function FileUploader({ onDataProcessed, onCancel, existingData = false }
   const [existingFiles, setExistingFiles] = useState([]);
   const [possibleDuplicate, setPossibleDuplicate] = useState(null);
   const [estimatedFilesRemaining, setEstimatedFilesRemaining] = useState(null);
+  const [platformMismatch, setPlatformMismatch] = useState(null);
   const fileInputRef = useRef(null);
   const { columnMappings, validateColumns, missingColumns } = useColumnMapper();
 
@@ -95,9 +98,10 @@ export function FileUploader({ onDataProcessed, onCancel, existingData = false }
       setValidationResult(null);
       setCsvContent(null);
       setPossibleDuplicate(null);
+      setPlatformMismatch(null);
       setTotalFiles(fileArray.length);
       
-      // Analysera den första filen för minneshantering
+      // Analysera den första filen för minneshantering och plattformskontroll
       try {
         setIsLoading(true);
         
@@ -107,6 +111,47 @@ export function FileUploader({ onDataProcessed, onCancel, existingData = false }
         
         const analysis = await analyzeCSVFile(content);
         setFileAnalysis(analysis);
+        
+        // Kontrollera plattformstyp med förbättrad logik
+        console.log("FileUploader - Analysresultat:", analysis);
+        
+        // Avgör plattform baserat på detekteringsresultat
+        const detectedPlatform = analysis.isInstagramData ? 'instagram' : 'facebook';
+        console.log(`FileUploader - Detekterad plattform: ${detectedPlatform}, vald plattform: ${selectedPlatform}`);
+        
+        // Specialfall: Om användaren valt Instagram men systemet detekterade Facebook, gör en djupare analys
+        if (selectedPlatform === 'instagram' && detectedPlatform === 'facebook') {
+          // Kontrollera om det finns några Instagram-indikatorer som kan ha missats
+          const hasInstagramFeatures = 
+            analysis.dataSourceDetails?.hasInstagramIndicators || 
+            (analysis.dataSourceDetails?.instagramMatchedColumns?.length > 0);
+          
+          if (hasInstagramFeatures) {
+            console.log("FileUploader - Hittat Instagram-indikatorer trots initial Facebook-klassificering, antar Instagram-data");
+            // Om vi hittar Instagram-indikatorer, anta att det ÄR Instagram-data trots initial Facebook-klassificering
+            // Detta är för att hantera blandade format och ge Instagram-indikatorerna högre prioritet
+            analysis.isInstagramData = true;
+            analysis.isFacebookData = false;
+            // Uppdatera detekterad plattform
+            const detectedPlatformUpdated = 'instagram';
+            
+            // Om vi nu har samma plattform, visa inte mismatch-varning
+            if (detectedPlatformUpdated === selectedPlatform) {
+              setPlatformMismatch(null);
+              return;
+            }
+          }
+        }
+        
+        // Varna om plattformsmismatch
+        if (selectedPlatform && detectedPlatform !== selectedPlatform) {
+          console.log("FileUploader - Plattformsmismatch upptäckt");
+          setPlatformMismatch({
+            expected: selectedPlatform,
+            detected: detectedPlatform,
+            analysis: analysis
+          });
+        }
         
         // Uppskatta minnesbehov baserat på alla filer
         if (memoryUsage) {
@@ -186,7 +231,8 @@ export function FileUploader({ onDataProcessed, onCancel, existingData = false }
         content, 
         columnMappings, 
         shouldMergeWithExisting,
-        file.name
+        file.name,
+        selectedPlatform
       );
       
       if (processedData.meta?.stats?.duplicates > 0) {
@@ -296,11 +342,15 @@ export function FileUploader({ onDataProcessed, onCancel, existingData = false }
       };
       
       analyzeUploadedFiles();
+    } else if (platformMismatch) {
+      // Om användaren vill fortsätta trots plattformsmismatch
+      setPlatformMismatch(null);
     }
   };
   
   const handleCancelDuplicateUpload = () => {
     setPossibleDuplicate(null);
+    setPlatformMismatch(null);
     setFiles([]);
     
     // Säkerställ att fileInputRef.current finns innan vi sätter value
@@ -369,9 +419,111 @@ export function FileUploader({ onDataProcessed, onCancel, existingData = false }
       </div>
     );
   }
+  
+  // Visa varning om plattformsmismatch
+  if (platformMismatch) {
+    return (
+      <div className="space-y-4">
+        <Alert className="bg-yellow-50 border-yellow-200">
+          <AlertCircle className="h-4 w-4 text-yellow-600" />
+          <AlertTitle className="text-yellow-800">Varning - Fel filtyp</AlertTitle>
+          <AlertDescription className="text-yellow-700">
+            <p className="mb-2">
+              Det verkar som att du försöker lägga till en {platformMismatch.detected === 'instagram' ? 'Instagram' : 'Facebook'}-fil, 
+              men du har valt att arbeta med {platformMismatch.expected === 'instagram' ? 'Instagram' : 'Facebook'}-data.
+            </p>
+            <div className="bg-white p-3 rounded-md border border-yellow-300 mb-4">
+              <div className="grid grid-cols-1 gap-2 text-sm">
+                <span className="font-semibold">Fildetaljer:</span>
+                <div className="flex items-center">
+                  {platformMismatch.detected === 'instagram' ? 
+                    <Instagram className="w-4 h-4 mr-2 text-pink-500" /> : 
+                    <Facebook className="w-4 h-4 mr-2 text-blue-500" />}
+                  <span>Detekterad plattform: <span className="font-medium">
+                    {platformMismatch.detected === 'instagram' ? 'Instagram' : 'Facebook'}
+                  </span></span>
+                </div>
+                <div className="flex items-center">
+                  {platformMismatch.expected === 'instagram' ? 
+                    <Instagram className="w-4 h-4 mr-2 text-pink-500" /> : 
+                    <Facebook className="w-4 h-4 mr-2 text-blue-500" />}
+                  <span>Vald plattform: <span className="font-medium">
+                    {platformMismatch.expected === 'instagram' ? 'Instagram' : 'Facebook'}
+                  </span></span>
+                </div>
+                
+                {platformMismatch.analysis && (
+                  <div className="mt-3 pt-3 border-t border-yellow-200">
+                    <span className="font-semibold">Detekteringsdetaljer:</span>
+                    <div className="text-xs mt-1 bg-gray-50 p-2 rounded overflow-auto max-h-32">
+                      <ul>
+                        {platformMismatch.analysis.dataSourceDetails?.instagramMatchedColumns?.length > 0 && (
+                          <li>
+                            Instagram-kolumner: {platformMismatch.analysis.dataSourceDetails.instagramMatchedColumns.join(', ')}
+                          </li>
+                        )}
+                        {platformMismatch.analysis.dataSourceDetails?.facebookMatchedColumns?.length > 0 && (
+                          <li>
+                            Facebook-kolumner: {platformMismatch.analysis.dataSourceDetails.facebookMatchedColumns.join(', ')}
+                          </li>
+                        )}
+                        <li>
+                          {platformMismatch.analysis.dataSourceDetails?.hasInstagramIndicators 
+                            ? 'Innehåller Instagram-indikatorer' 
+                            : 'Inga Instagram-indikatorer hittades'}
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <p className="mb-4 bg-red-50 p-2 rounded border border-red-200 text-red-700">
+              <AlertCircle className="inline-block h-4 w-4 mr-1" />
+              Vi rekommenderar att du <strong>avbryter</strong> och byter plattform, eller väljer rätt filtyp.
+              Att blanda data från olika plattformar kan leda till felaktiga resultat.
+            </p>
+            <div className="flex space-x-4">
+              <Button 
+                variant="outline" 
+                onClick={handleCancelDuplicateUpload}
+              >
+                Avbryt och välj annan fil
+              </Button>
+              <Button 
+                variant="outline"
+                className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                onClick={() => onCancel()} // Avbryt och gå tillbaka till huvudskärmen
+              >
+                Avbryt och byt plattform
+              </Button>
+              <Button 
+                onClick={handleContinueDespiteWarning}
+                className="bg-yellow-600 hover:bg-yellow-700"
+              >
+                Fortsätt ändå (inte rekommenderat)
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  // Anpassa vissa UI-element baserat på vald plattform
+  const getPlatformClass = () => {
+    return selectedPlatform === 'instagram' ? 'instagram-platform' : 'facebook-platform';
+  };
+  
+  const getPlatformIcon = () => {
+    if (selectedPlatform === 'instagram') {
+      return <Instagram className="w-12 h-12 text-primary" />;
+    }
+    return <Facebook className="w-12 h-12 text-primary" />;
+  };
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${getPlatformClass()}`}>
       {/* Minnesindikator som visas om vi lägger till ny data */}
       {existingData && (
         <MemoryIndicator onUpdate={handleMemoryUpdate} />
@@ -415,8 +567,8 @@ export function FileUploader({ onDataProcessed, onCancel, existingData = false }
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-xl">
             {existingData 
-              ? 'Lägg till fler CSV-filer'
-              : 'Importera CSV från Meta Business Suite'}
+              ? `Lägg till fler ${selectedPlatform === 'instagram' ? 'Instagram' : 'Facebook'} CSV-filer`
+              : `Importera CSV från ${selectedPlatform === 'instagram' ? 'Instagram Insights' : 'Meta Business Suite'}`}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -476,7 +628,7 @@ export function FileUploader({ onDataProcessed, onCancel, existingData = false }
               ) : files.length > 0 ? (
                 <FilesIcon className="w-12 h-12 text-primary" />
               ) : (
-                <UploadCloud className="w-12 h-12 text-muted-foreground" />
+                getPlatformIcon()
               )}
               
               <div className="space-y-2">
@@ -485,12 +637,14 @@ export function FileUploader({ onDataProcessed, onCancel, existingData = false }
                     ? 'Kan inte lägga till mer data - Minnet är fullt' 
                     : files.length > 0 
                       ? `${files.length} fil${files.length > 1 ? 'er' : ''} valda`
-                      : 'Släpp CSV-filer här eller klicka för att välja filer'}
+                      : `Släpp ${selectedPlatform === 'instagram' ? 'Instagram' : 'Facebook'} CSV-filer här eller klicka för att välja filer`}
                 </h3>
                 <p className="text-sm text-muted-foreground max-w-xs mx-auto">
                   {memoryCheck.status === 'critical' && !memoryCheck.canAddFile 
                     ? 'Du behöver rensa befintlig data innan du kan lägga till mer' 
-                    : 'Du kan välja flera CSV-filer samtidigt. Filerna kommer att kombineras i den ordning de väljs.'}
+                    : selectedPlatform === 'instagram'
+                      ? 'Välj CSV-filer exporterade från Instagram Insights. Du kan välja flera samtidigt.'
+                      : 'Välj CSV-filer exporterade från Meta Business Suite eller Facebook Insights. Du kan välja flera samtidigt.'}
                 </p>
                 
                 {files.length > 0 && (

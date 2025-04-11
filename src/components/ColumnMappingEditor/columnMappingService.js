@@ -3,21 +3,15 @@
  * 
  * En robust hantering av kolumnmappningar som används för att översätta
  * externa kolumnnamn från CSV-filer till interna fältnamn i applikationen.
+ * Stöd för både Facebook- och Instagram-export.
  */
-import { readColumnMappings as getStoredMappings, saveColumnMappings as storeColumnMappings } from '../../utils/webStorageService';
 
-// Field aliases for handling existing mappings mellan Facebook och Instagram
-const FIELD_ALIASES = {
-  'page_id': 'account_id',
-  'page_name': 'account_name',
-  'reactions': 'likes',
-  'engagement_total': 'total_engagement',
-  'post_reach': 'reach'
-};
+console.log("columnMappingService.js - Laddar och initierar...");
 
 // Standard kolumnmappningar - används när inga sparade mappningar finns
+// Placerad här först för att undvika eventuella laddningsproblem
 export const DEFAULT_MAPPINGS = {
-  // Metadata (visas i PostView)
+  // Metadata (visas i PostView) - Facebook
   "Publicerings-id": "post_id",
   "Sid-id": "account_id",
   "Sidnamn": "account_name",
@@ -26,7 +20,7 @@ export const DEFAULT_MAPPINGS = {
   "Inläggstyp": "post_type",
   "Permalänk": "permalink",
   
-  // Mätvärden
+  // Mätvärden - Facebook
   "Visningar": "views",
   "Räckvidd": "reach",
   "Reaktioner, kommentarer och delningar": "total_engagement",
@@ -35,57 +29,132 @@ export const DEFAULT_MAPPINGS = {
   "Delningar": "shares",
   "Totalt antal klick": "total_clicks",
   "Länkklick": "link_clicks",
-  "Övriga klick": "other_clicks"
+  "Övriga klick": "other_clicks",
+  
+  // Metadata - Instagram
+  "Inläggs-ID": "post_id",
+  "Konto-ID": "account_id",
+  "Kontonamn": "account_name",
+  "Användarnamn": "account_username",
+  "Bildtext": "description",
+  "Publicerat": "publish_time",
+  "Medietyp": "post_type",
+  "Länk": "permalink",
+  
+  // Mätvärden - Instagram
+  "Intryck": "views",          // Instagram använder "Intryck" istället för "Visningar"
+  "Räckvidd": "reach",         // Samma för både FB och IG
+  "Interaktioner totalt": "total_engagement",
+  "Gilla-markeringar": "likes",
+  "Kommentarer": "comments",   // Samma för både FB och IG
+  "Delningar": "shares",       // Samma för både FB och IG
+  "Sparade": "saves",          // Instagram-specifik
+  "Profilbesök": "profile_visits", // Instagram-specifik
+  "Följare": "follows",        // Instagram-specifik
+  "30-sekundersvisningar": "video_30sec_views", // Instagram-specifik
+  "Videospelningar": "video_plays", // Instagram-specifik
+  "Genomsnittlig visningstid": "avg_video_play_time" // Instagram-specifik
+};
+
+import { readColumnMappings as getStoredMappings, saveColumnMappings as storeColumnMappings } from '../../utils/webStorageService';
+
+// Field aliases for handling existing mappings mellan Facebook och Instagram
+const FIELD_ALIASES = {
+  // Facebook alias
+  'page_id': 'account_id',
+  'page_name': 'account_name',
+  'reactions': 'likes',
+  'engagement_total': 'total_engagement',
+  'post_reach': 'reach',
+  
+  // Instagram alias
+  'instagram_id': 'account_id',
+  'profile_name': 'account_name',
+  'username': 'account_username',
+  'media_id': 'post_id',
+  'media_type': 'post_type',
+  'media_url': 'permalink',
+  'caption': 'description',
+  'timestamp': 'publish_time',
+  'impressions': 'views',
+  'saves': 'saves',
+  'profile_visits': 'profile_visits',
+  'follows': 'follows',
+  'total_interactions': 'total_engagement'
 };
 
 // Beskrivande namn för användargränssnittet
 export const DISPLAY_NAMES = {
+  // Gemensamma
   'post_id': 'Inläggs-ID',
-  'account_id': 'Sido-ID',
-  'account_name': 'Sidnamn',
-  'account_username': 'Sidkonto',
-  'description': 'Beskrivning',
+  'account_id': 'Konto-ID',
+  'account_name': 'Kontonamn',
+  'description': 'Beskrivning/Bildtext',
   'publish_time': 'Publiceringstid',
-  'post_type': 'Typ',
+  'post_type': 'Inläggstyp',
   'permalink': 'Länk',
-  'views': 'Sidvisningar',
+  'views': 'Visningar/Intryck',
   'reach': 'Räckvidd',
-  'average_reach': 'Genomsnittlig räckvidd',
-  'total_engagement': 'Interaktioner',
-  'likes': 'Reaktioner',
+  'total_engagement': 'Interaktioner totalt',
+  'likes': 'Gilla/Reaktioner',
   'comments': 'Kommentarer',
   'shares': 'Delningar',
+  
+  // Facebook-specifika
   'total_clicks': 'Totalt antal klick',
   'other_clicks': 'Övriga klick',
-  'link_clicks': 'Länkklick'
+  'link_clicks': 'Länkklick',
+  
+  // Instagram-specifika
+  'account_username': 'Användarnamn',
+  'saves': 'Sparade',
+  'profile_visits': 'Profilbesök',
+  'follows': 'Nya följare',
+  'video_30sec_views': '30-sekundersvisningar',
+  'video_plays': 'Videospelningar',
+  'avg_video_play_time': 'Genomsnittlig visningstid'
 };
 
 // Alternativa exempel på kolumnnamn för hjälp vid mappning 
 // Används enbart för att visa förslag i mappningseditorn, inte för matchning
 export const COLUMN_EXAMPLES = {
-  'views': ["Visningar", "Views"],
-  'reach': ["Räckvidd", "Reach"],
-  'total_engagement': ["Reaktioner, kommentarer och delningar", "Total engagement"],
-  'likes': ["Reaktioner", "Likes", "Gilla-markeringar"],
+  // Gemensamma fält
+  'views': ["Visningar", "Views", "Intryck", "Impressions"],
+  'reach': ["Räckvidd", "Reach", "Audiences", "Unique users"],
+  'total_engagement': ["Reaktioner, kommentarer och delningar", "Total engagement", "Interaktioner totalt", "Engagement"],
+  'likes': ["Reaktioner", "Likes", "Gilla-markeringar", "Reactions", "Engagements", "Likes and reactions"],
   'comments': ["Kommentarer", "Comments"],
   'shares': ["Delningar", "Shares"],
-  'total_clicks': ["Totalt antal klick", "Total clicks"],
+  
+  // Facebook-specifika
+  'total_clicks': ["Totalt antal klick", "Total clicks", "All clicks"],
   'other_clicks': ["Övriga klick", "Other clicks"],
   'link_clicks': ["Länkklick", "Link clicks"],
   'post_id': ["Publicerings-id", "Post ID", "Inläggs-ID"],
-  'account_id': ["Sid-id", "Page ID", "Konto-ID"],
-  'account_name': ["Sidnamn", "Page name", "Account name"],
-  'description': ["Beskrivning", "Description"],
-  'publish_time': ["Publiceringstid", "Publish time", "Datum", "Date"],
-  'post_type': ["Inläggstyp", "Post type", "Typ", "Type"],
-  'permalink': ["Permalänk", "Permanent link", "Länk", "Link"]
+  'account_id': ["Sid-id", "Page ID", "Konto-ID", "Account ID", "Instagram ID"],
+  'account_name': ["Sidnamn", "Page name", "Account name", "Kontonamn", "Profile name"],
+  'description': ["Beskrivning", "Description", "Bildtext", "Caption", "Titel", "Title"],
+  'publish_time': ["Publiceringstid", "Publish time", "Datum", "Date", "Publicerat", "Timestamp"],
+  'post_type': ["Inläggstyp", "Post type", "Typ", "Type", "Medietyp", "Media type"],
+  'permalink': ["Permalänk", "Permanent link", "Länk", "Link", "URL", "Media URL"],
+  
+  // Instagram-specifika
+  'account_username': ["Användarnamn", "Username", "@username", "Handle"],
+  'saves': ["Sparade", "Saved", "Bookmarks", "Saves"],
+  'profile_visits': ["Profilbesök", "Profile visits", "Profile views", "Profile clicks"],
+  'follows': ["Följare", "Follows", "New followers", "Gained followers"],
+  'video_30sec_views': ["30-sekundersvisningar", "30s views", "Video watches"],
+  'video_plays': ["Videospelningar", "Video plays", "Video views"],
+  'avg_video_play_time': ["Genomsnittlig visningstid", "Average video play time", "Avg. time watched"]
 };
 
 // Gruppera kolumner för bättre översikt i ColumnMappingEditor
 export const COLUMN_GROUPS = {
-  'Metadata': ['post_id', 'account_id', 'account_name', 'description', 'publish_time', 'post_type', 'permalink'],
+  'Metadata': ['post_id', 'account_id', 'account_name', 'account_username', 'description', 'publish_time', 'post_type', 'permalink'],
   'Räckvidd och visningar': ['views', 'reach', 'average_reach'],
-  'Engagemang': ['total_engagement', 'likes', 'comments', 'shares', 'total_clicks', 'other_clicks', 'link_clicks']
+  'Engagemang': ['total_engagement', 'likes', 'comments', 'shares', 'saves', 'profile_visits', 'follows'],
+  'Video': ['video_plays', 'video_30sec_views', 'avg_video_play_time'],
+  'Klick (Facebook)': ['total_clicks', 'link_clicks', 'other_clicks']
 };
 
 // Cache för att förbättra prestanda
@@ -103,6 +172,66 @@ export function normalizeText(text) {
     .toLowerCase()
     .replace(/\s+/g, ' ') // Hantera multipla mellanslag
     .replace(/[\u200B-\u200D\uFEFF]/g, ''); // Ta bort osynliga tecken
+}
+
+/**
+ * Kontrollerar om data ser ut att vara från Instagram istället för Facebook
+ * baserat på kolumnnamn och värden
+ */
+export function isInstagramData(dataObject) {
+  if (!dataObject) return false;
+  
+  console.log("isInstagramData - Kontrollerar objekt:", Object.keys(dataObject).slice(0, 10));
+  
+  // Instagram-specifika kolumnnamn (både svenska och engelska)
+  const instagramColumns = [
+    // Svenska namn
+    "Användarnamn", "Konto-ID", "Kontonamn", "Medietyp", "Bildtext", 
+    "Sparade", "Profilbesök", "Följare", "Intryck", "30-sekundersvisningar", 
+    "Videospelningar", "Genomsnittlig visningstid",
+    
+    // Engelska namn
+    "Username", "Account ID", "Profile Name", "Media Type", "Caption",
+    "Saves", "Profile Visits", "Followers", "Impressions", "30s Views",
+    "Video Plays", "Avg. Watch Time"
+  ];
+  
+  // Kontrollera om någon Instagram-specifik kolumn finns
+  for (const col of instagramColumns) {
+    if (dataObject[col] !== undefined) {
+      console.log("Instagram-kolumn hittad:", col);
+      return true;
+    }
+  }
+  
+  // Om vi har account_username eller saves, är det sannolikt Instagram
+  if (dataObject.account_username || dataObject.saves || 
+      dataObject.profile_visits || dataObject.follows) {
+    console.log("Instagram-specifika interna fält hittade");
+    return true;
+  }
+  
+  // Kontrollera om kolumnnamn innehåller Instagram-specifika nyckelord
+  const instagramKeywords = ['saves', 'profile visit', 'follow', 'impression', 
+                            'spara', 'profilbes', 'följ', 'intryck', 
+                            'videospelning', 'sekundervisning', 'användarnamn'];
+  
+  const hasKeyword = Object.keys(dataObject).some(key => {
+    const lowerKey = key.toLowerCase();
+    return instagramKeywords.some(keyword => lowerKey.includes(keyword));
+  });
+  
+  if (hasKeyword) {
+    console.log("Instagram-nyckelord hittade i kolumnnamn");
+    return true;
+  }
+  
+  // Om plattformsflagga finns, använd den
+  if (dataObject.platform === 'instagram') {
+    return true;
+  }
+  
+  return false;
 }
 
 /**
