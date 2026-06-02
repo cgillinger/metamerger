@@ -2,6 +2,8 @@
 
 En webbapplikation för att analysera och visualisera statistik från Facebook-inlägg. Applikationen låter dig ladda upp CSV-filer som exporterats från Facebook Insights (Meta Business Suite) och visualisera data på ett lättöverskådligt sätt.
 
+> Det här är ett personligt hobbyprojekt som jag byggt för eget bruk och lagt upp ifall det är till nytta för någon annan. Jag jobbar på det på fritiden, så issues och PR:ar är välkomna men svar kan dröja. Använd på egen risk.
+
 **Live Demo:** [https://cgillinger.github.io/facebook_stats/](https://cgillinger.github.io/facebook_stats/)
 
 ## Funktioner
